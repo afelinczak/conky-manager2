@@ -6,7 +6,7 @@ launcherdir=$(sharedir)/applications
 mandir=$(sharedir)/man
 man1dir=$(mandir)/man1
 CFLAGS=--std=c99
-app_name=conky-manager
+app_name=conky-manager2
 app_fullname="Conky Manager"
 
 all:
@@ -51,6 +51,12 @@ install:
 	mkdir -p "$(DESTDIR)$(localedir)/hr_HR/LC_MESSAGES"
 	msgfmt --check --verbose -o "$(DESTDIR)$(localedir)/hr_HR/LC_MESSAGES/${app_name}.mo" ../po/${app_name}-hr.po
 	
+	mkdir -p "$(DESTDIR)$(localedir)/nl_NL/LC_MESSAGES"
+	msgfmt --check --verbose -o "$(DESTDIR)$(localedir)/nl_NL/LC_MESSAGES/${app_name}.mo" ../po/${app_name}-nl.po
+	
+	mkdir -p "$(DESTDIR)$(localedir)/pt_BR/LC_MESSAGES"
+	msgfmt --check --verbose -o "$(DESTDIR)$(localedir)/pt_BR/LC_MESSAGES/${app_name}.mo" ../po/${app_name}-pt_BR.po
+
 uninstall:
 	#binary
 	rm -f "$(DESTDIR)$(bindir)/${app_name}"

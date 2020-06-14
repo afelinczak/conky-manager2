@@ -36,12 +36,12 @@ using TeeJee.Misc;
 
 public Main App;
 public const string AppName = "Conky Manager";
-public const string AppShortName = "conky-manager";
-public const string AppVersion = "2.4";
+public const string AppShortName = "conky-manager2";
+public const string AppVersion = "2.7";
 public const string AppAuthor = "Tony George";
 public const string AppAuthorEmail = "teejeetech@gmail.com";
 
-const string GETTEXT_PACKAGE = "conky-manager";
+const string GETTEXT_PACKAGE = "conky-manager2";
 const string LOCALE_DIR = "/usr/share/locale";
 
 extern void exit(int exit_code);
@@ -120,7 +120,7 @@ public class Main : GLib.Object {
 		app_path = (File.new_for_path (args[0])).get_parent().get_path ();
 		share_folder = "/usr/share";
 		data_dir = home + "/.conky";
-		app_conf_path = home + "/.config/conky-manager.json";
+		app_conf_path = home + "/.config/conky-manager2.json";
 		search_folders = new Gee.ArrayList<string>();
 
 		conkyrc_list = new Gee.ArrayList<ConkyRC>();
@@ -280,7 +280,7 @@ public class Main : GLib.Object {
 	}
 
 	public void init_theme_packs(){
-		string sharePath = "/usr/share/conky-manager/themepacks";
+		string sharePath = "/usr/share/conky-manager2/themepacks";
 		string config_file = data_dir + "/.themepacks";
 
 		//create empty config file if missing
@@ -344,7 +344,7 @@ public class Main : GLib.Object {
 	    }
 	}
 
-	public bool install_theme_pack(string pkgPath, bool checkOnly = false){
+	public bool install_theme_pack(string pkgPath, bool tarformat = false){
 		string cmd = "";
 		string std_out;
 		string std_err;
@@ -364,7 +364,10 @@ public class Main : GLib.Object {
 
 		//unzip
 		cmd = "cd \"" + temp_dir + "\"\n";
-		cmd += "7za x \"" + pkgPath + "\">nul\n";
+		if (tarformat) 
+            cmd += "7za x -so \"" + pkgPath + "\"  | tar xf - >nul\n";
+		else
+            cmd += "7za x \"" + pkgPath + "\">nul\n";
 
 		ret_val = execute_command_script_sync(cmd, out std_out, out std_err);
 		if (ret_val != 0){
@@ -374,6 +377,7 @@ public class Main : GLib.Object {
 		}
 
 		//install
+        int archive_path_counter = 0;
 		foreach(string dirname in new string[]{".conky",".Conky",".fonts",".config/conky",".config/Conky"}){
 			string src_path = temp_dir + "/" + dirname;
 			string dst_path = Environment.get_home_dir() + "/" + dirname;
@@ -387,8 +391,23 @@ public class Main : GLib.Object {
 
 				//rsync folder
 				execute_command_sync("rsync -ai --numeric-ids '%s/' '%s'".printf(src_path,dst_path));
+                archive_path_counter++;
 			}
 		}
+        //if archive is not "conky theme" style containing files under .conky path just force to ~/.conky
+        if (archive_path_counter == 0)
+        {
+			string src_path = temp_dir;
+			string dst_path = Environment.get_home_dir() + "/.conky";
+
+			//create destination
+			if (!dir_exists(dst_path)){
+				create_dir(dst_path);
+			}
+
+			//rsync folder
+			execute_command_sync("rsync -ai --numeric-ids '%s/' '%s'".printf(src_path,dst_path));
+        }
 
 		//delete temp files
 		Posix.system("rm -rf \"" + temp_dir + "\"");
@@ -430,7 +449,7 @@ public class Main : GLib.Object {
 	public void find_conkyrc_files_in_path(string path){
 		string std_out = "";
 		string std_err = "";
-		string cmd = "grep -r \"^[[:blank:]]*TEXT[[:blank:]]*$\" \"%s\"".printf(path);
+		string cmd = "grep -r \"^[[:blank:]]*TEXT[[:blank:]]*$\\|conky\\.text[[:blank:]]*=\" \"%s\"".printf(path);
 		last_cmd = cmd;
 		int exit_code = execute_command_script_sync(cmd, out std_out, out std_err);
 
@@ -808,6 +827,7 @@ public abstract class ConkyConfigItem: GLib.Object{
 
 public class ConkyRC : ConkyConfigItem {
 	public string text = "";
+	public bool one_ten_config = false;
 
 	private Regex rex_conky_win;
 	private MatchInfo match;
@@ -1226,6 +1246,18 @@ public class ConkyRC : ConkyConfigItem {
 					s = "pseudo";
 				}
 			}
+			else if (own_window_transparent == "true"){
+				if(own_window_argb_visual == "true"){
+					//own_window_argb_value, if present, will be ignored by Conky
+					s = "trans";
+				}
+				else if (own_window_argb_visual == "false"){
+					s = "pseudo";
+				}
+				else{
+					s = "pseudo";
+				}
+			}
 			else if (own_window_transparent == "no"){
 				if(own_window_argb_visual == "yes"){
 					if (own_window_argb_value == "0"){
@@ -1245,6 +1277,25 @@ public class ConkyRC : ConkyConfigItem {
 					s = "opaque";
 				}
 			}
+			else if (own_window_transparent == "false"){
+				if(own_window_argb_visual == "true"){
+					if (own_window_argb_value == "0"){
+						s = "trans";
+					}
+					else if (own_window_argb_value == "255"){
+						s = "opaque";
+					}
+					else{
+						s = "semi";
+					}
+				}
+				else if (own_window_argb_visual == "false"){
+					s = "opaque";
+				}
+				else{
+					s = "opaque";
+				}
+			}
 			else{
 				s = "opaque";
 			}
@@ -1256,22 +1307,47 @@ public class ConkyRC : ConkyConfigItem {
 		set{
 			switch (value.down()){
 				case "opaque":
-					own_window_transparent = "no";
-					own_window_argb_visual = "no";
+					if (one_ten_config){
+						own_window_transparent = "false";
+						own_window_argb_visual = "false";
+					}
+					else {
+						own_window_transparent = "no";
+						own_window_argb_visual = "no";
+					}
 					break;
 				case "trans":
-					own_window_transparent = "yes";
-					own_window_argb_visual = "yes";
-					own_window_argb_value = "0";
+					if (one_ten_config){
+						own_window_transparent = "true";
+						own_window_argb_visual = "true";
+						own_window_argb_value = "0";
+					}
+					else {
+						own_window_transparent = "yes";
+						own_window_argb_visual = "yes";
+						own_window_argb_value = "0";
+					}
 					break;
 				case "pseudo":
-					own_window_transparent = "yes";
-					own_window_argb_visual = "no";
+					if (one_ten_config){
+						own_window_transparent = "true";
+						own_window_argb_visual = "false";
+					}
+					else {
+						own_window_transparent = "yes";
+						own_window_argb_visual = "no";
+					}
 					break;
 				case "semi":
 				default:
-					own_window_transparent = "no";
-					own_window_argb_visual = "yes";
+					if (one_ten_config){
+						own_window_transparent = "false";
+						own_window_argb_visual = "true";
+					}
+					else {
+						own_window_transparent = "no";
+						own_window_argb_visual = "yes";
+					}
 					break;
 			}
 
@@ -1294,13 +1370,58 @@ public class ConkyRC : ConkyConfigItem {
 		}
 	}
 
+	public string minimum_width{
+		owned get{
+			string s = get_value("minimum_width");
+			if (s == "") { s = "0"; }
+			log_debug("Get: minimum_width " + s);
+			return s;
+		}
+		set
+		{
+			string newLine = "minimum_width " + value;
+			set_value("minimum_width", newLine);
+			log_debug("Set: minimum_width " + value);
+		}
+	}
+
+	public string minimum_height{
+		owned get{
+			string s = get_value("minimum_height");
+			if (s == "") { s = "0"; }
+			log_debug("Get: minimum_height " + s);
+			return s;
+		}
+		set
+		{
+			string newLine = "minimum_height " + value;
+			set_value("minimum_height", newLine);
+			log_debug("Set: minimum_height " + value);
+		}
+	}
+
 	public int height_padding{
 		get{
 			string[] arr = this.text.split("\n");
 			int count = 0;
+			int k = arr.length - 1;
 
-			//count empty lines at end of the file
-			for(int k = arr.length - 1; k >= 0; k--){
+			//skip empty lines to find ]] ending marker
+			if (one_ten_config){
+				for(k = arr.length - 1; k >= 0; k--){
+					if (arr[k].strip() == ""){
+						//skip blank lines after "]]"
+					}
+					else if (arr[k].strip() == "]]"){
+						k--;
+						count++;//fudge this so works with following previous existing code below
+						break;
+					}
+				}
+			}
+
+			//count empty lines at end of text section
+			for(k=k; k >= 0; k--){
 				if (arr[k].strip() == ""){
 					count++;
 				}
@@ -1320,17 +1441,35 @@ public class ConkyRC : ConkyConfigItem {
 			string newText = "";
 			string[] arr = this.text.split("\n");
 			int count = 0;
+			int skipExisting = 0;
 
 			//count empty lines at end of the file
-			for(int k = arr.length - 1; k >= 0; k--){
-				if (arr[k].strip() == ""){
-					count++;
-				}
-				else{
-					break;
+			if (one_ten_config){
+				bool counting = false;
+				for(int k = arr.length - 1; k >= 0; k--){
+					if (arr[k].strip() == ""){
+						count++;
+						if (counting) { skipExisting++; }
+					}
+					else if (arr[k].strip() == "]]"){
+						count++;
+						counting = true;
+					}
+					else{
+						break;
+					}
 				}
 			}
-
+			else{
+				for(int k = arr.length - 1; k >= 0; k--){
+					if (arr[k].strip() == ""){
+						count++;
+					}
+					else{
+						break;
+					}
+				}
+			}
 			int lastLineNumber = arr.length - count;
 
 			//remove all empty lines from end of text
@@ -1343,6 +1482,13 @@ public class ConkyRC : ConkyConfigItem {
 			//add empty lines at end of text
 			for(int k = 1; k <= value; k++){
 				newText += "\n";
+			}
+
+			if (one_ten_config){
+				//add the rest of file back from ]] to end
+				for(int k = lastLineNumber+skipExisting; k < arr.length-1; k++){
+					newText += arr[k] + "\n";
+				}
 			}
 
 			log_debug("Set: height_padding " + value.to_string());
@@ -1387,7 +1533,7 @@ public class ConkyRC : ConkyConfigItem {
 
 	public string network_device{
 		owned get{
-			string var1 = "totaldown|totalup|upspeed|upspeedf|downspeed|downspeedf|wireless_ap|wireless_bitrate|wireless_essid|wireless_link_qual|wireless_link_qual_max|wireless_link_qual_perc|wireless_mode";
+			string var1 = "totaldown|totalup|upspeed|upspeedf|downspeed|downspeedf|wireless_ap|wireless_bitrate|wireless_essid|wireless_link_qual|wireless_link_qual_max|wireless_link_qual_perc|wireless_mode|if_up|addr";
 			var1 = """\${(""" + var1 + "|" + var1.up() + """)[ \t]*([A-Za-z0-9]+)[ \t]*}""";
 
 			string var2 = "upspeedgraph|downspeedgraph";
@@ -1423,7 +1569,7 @@ public class ConkyRC : ConkyConfigItem {
 		{
 			if (value == "") { return; }
 
-			string var1 = "totaldown|totalup|upspeed|upspeedf|downspeed|downspeedf|wireless_ap|wireless_bitrate|wireless_essid|wireless_link_qual|wireless_link_qual_max|wireless_link_qual_perc|wireless_mode";
+			string var1 = "totaldown|totalup|upspeed|upspeedf|downspeed|downspeedf|wireless_ap|wireless_bitrate|wireless_essid|wireless_link_qual|wireless_link_qual_max|wireless_link_qual_perc|wireless_mode|if_up|addr";
 			var1 = """\${(""" + var1 + "|" + var1.up() + """)[ \t]*([A-Za-z0-9]+)[ \t]*}""";
 
 			string var2 = "upspeedgraph|downspeedgraph";
@@ -1462,7 +1608,10 @@ public class ConkyRC : ConkyConfigItem {
 		foreach(string line in this.text.split("\n")){
 			string s = line.down().strip();
 			if (s.has_prefix(param)){
-				if (s.index_of(" ") != -1){
+				if (s.index_of("=") != -1){
+					return s[s.index_of("=")+1:s.length].strip().split(",")[0].replace("\'", " ").replace("\"", " ").strip();
+				}
+				else if (s.index_of(" ") != -1){
 					return s[s.index_of(" ")+1:s.length].strip();
 				}
 				else if (s.index_of("\t") != -1){
@@ -1484,14 +1633,24 @@ public class ConkyRC : ConkyConfigItem {
 			if (s.has_prefix(param)){
 				if (!remove){
 					//replace line
-					newText += newLine + "\n";
+					if (one_ten_config){
+						newText += line.replace(get_value(param), newLine.split(" ")[1]) + "\n";
+					}
+					else{
+						newText += newLine + "\n";
+					}
 				}
 				found = true;
 			}
 			else if ((s == "text")&&(!found)){
 				if (!remove){
 					//insert line
-					newText += newLine + "\n";
+					if (one_ten_config){
+						newText += newLine.split(" ")[0] + " = " + newLine.split(" ")[1] + ",\n";
+					}
+					else{
+						newText += newLine + "\n";
+					}
 				}
 				newText += line + "\n";
 				found = true;
